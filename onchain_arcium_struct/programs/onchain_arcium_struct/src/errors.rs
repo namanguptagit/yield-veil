@@ -30,4 +30,12 @@ pub enum ErrorCode {
     OrderNotFound,
     #[msg("Unauthorized access")]
     UnauthorizedAccess,
+    #[msg("Invalid amount")]
+    InvalidAmount,
+    #[msg("Math overflow")]
+    MathOverflow,
+    #[msg("Insufficient balance")]
+    InsufficientBalance,
+
+
 }

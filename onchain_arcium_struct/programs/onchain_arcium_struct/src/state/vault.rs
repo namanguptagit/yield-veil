@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-
+use anchor_spl::token::{Token, TokenAccount};
 use crate::constants::*;
 use crate::state::orderbook::{RiskLevel, RebalanceFrequency};
 // ---------------------------------------
@@ -86,31 +86,48 @@ pub struct CreateStrategy<'info> {
 #[derive(Accounts)]
 pub struct Deposit<'info> {
     #[account(mut)]
+    pub owner: Signer<'info>,
+
+    #[account(mut)]
     pub vault: Account<'info, Vault>,
+
     #[account(
-        init_if_needed,
-        payer = owner,
-        space = UserPosition::SPACE,
+        mut,
         seeds = [USER_POSITION_SEED, owner.key().as_ref(), vault.key().as_ref()],
         bump
     )]
     pub user_position: Account<'info, UserPosition>,
+
     #[account(mut)]
-    pub owner: Signer<'info>,
-    pub system_program: Program<'info, System>,
+    pub user_token: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub vault_escrow: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
 }
+
 
 #[derive(Accounts)]
 pub struct Withdraw<'info> {
     #[account(mut)]
+    pub owner: Signer<'info>,
+
+    #[account(mut)]
     pub vault: Account<'info, Vault>,
+
     #[account(
         mut,
         seeds = [USER_POSITION_SEED, owner.key().as_ref(), vault.key().as_ref()],
-        bump = user_position.bump,
-        close = owner
+        bump
     )]
     pub user_position: Account<'info, UserPosition>,
+
     #[account(mut)]
-    pub owner: Signer<'info>,
+    pub user_token: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub vault_escrow: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
 }

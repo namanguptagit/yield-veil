@@ -309,6 +309,10 @@ pub struct CancelOrder<'info> {
 pub struct SettleMatches<'info> {
     #[account(mut, has_one = admin)]
     pub orderbook: Account<'info, Orderbook>,
+
+
+    pub admin: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub order_a: Account<'info, OrderCommitment>,
     #[account(mut)]
