@@ -1,0 +1,519 @@
+// YieldVeil — Prisma Schema (Final v2)
+// 18 entities · Postgres · Privacy-first DeFi yield aggregator on Solana
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum VaultStatus {
+  active
+  paused
+  deprecated
+}
+
+enum RiskLevel {
+  low
+  medium
+  high
+}
+
+enum PoolType {
+  amm
+  clmm
+  orderbook
+}
+
+enum PayloadType {
+  rebalance_input
+  order_data
+  strategy_params
+}
+
+enum PayloadStatus {
+  pending
+  processing
+  computed
+  expired
+}
+
+enum OrderStatus {
+  pending
+  queued
+  processing
+  filled
+  cancelled
+}
+
+enum OrderbookStatus {
+  active
+  paused
+}
+
+enum TxStatus {
+  pending
+  confirmed
+  failed
+}
+
+enum PositionStatus {
+  active
+  closed
+}
+
+enum CronJobType {
+  scan
+  rebalance
+  compound
+}
+
+enum CronJobStatus {
+  active
+  paused
+  failed
+}
+
+enum LogStatus {
+  success
+  failure
+  timeout
+}
+
+// ============================================================
+// 1. USER
+// ============================================================
+
+model User {
+  id             String   @id @default(uuid())
+  walletAddress  String   @unique @map("wallet_address")
+  displayName    String?  @map("display_name")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  deposits      Deposit[]
+  withdrawals   Withdrawal[]
+  positions     Position[]
+  strategyNfts  StrategyNFT[]
+
+  @@map("users")
+}
+
+// ============================================================
+// 2. TOKEN
+// ============================================================
+
+model Token {
+  id          String   @id @default(uuid())
+  mintAddress String   @unique @map("mint_address")
+  symbol      String
+  name        String
+  decimals    Int
+  logoUrl     String?  @map("logo_url")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  vaults             Vault[]
+  deposits           Deposit[]
+  withdrawals        Withdrawal[]
+  poolsAsTokenA      Pool[]      @relation("PoolTokenA")
+  poolsAsTokenB      Pool[]      @relation("PoolTokenB")
+  orderbooksAsBase   Orderbook[] @relation("OrderbookBaseToken")
+  orderbooksAsQuote  Orderbook[] @relation("OrderbookQuoteToken")
+
+  @@map("tokens")
+}
+
+// ============================================================
+// 3. PROTOCOL
+// ============================================================
+
+model Protocol {
+  id              String   @id @default(uuid())
+  name            String
+  chain           String   @default("solana")
+  contractAddress String   @map("contract_address")
+  websiteUrl      String?  @map("website_url")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relations
+  pools Pool[]
+
+  @@map("protocols")
+}
+
+// ============================================================
+// 4. POOL
+// ============================================================
+
+model Pool {
+  id          String   @id @default(uuid())
+  protocolId  String   @map("protocol_id")
+  poolAddress String   @unique @map("pool_address")
+  poolType    PoolType @map("pool_type")
+  tokenAId    String   @map("token_a_id")
+  tokenBId    String   @map("token_b_id")
+  feeTier     Decimal? @map("fee_tier")
+  currentApy  Decimal  @default(0) @map("current_apy")
+  tvl         Decimal  @default(0)
+  riskScore   Int?     @map("risk_score")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  protocol     Protocol      @relation(fields: [protocolId], references: [id])
+  tokenA       Token         @relation("PoolTokenA", fields: [tokenAId], references: [id])
+  tokenB       Token         @relation("PoolTokenB", fields: [tokenBId], references: [id])
+  strategies   Strategy[]
+  apySnapshots APYSnapshot[]
+
+  @@map("pools")
+}
+
+// ============================================================
+// 5. VAULT
+// ============================================================
+
+model Vault {
+  id           String      @id @default(uuid())
+  vaultAddress String      @unique @map("vault_address")
+  name         String
+  tokenId      String      @map("token_id")
+  tvl          Decimal     @default(0)
+  currentApy   Decimal     @default(0) @map("current_apy")
+  totalShares  Decimal     @default(0) @map("total_shares")
+  status       VaultStatus @default(active)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  token             Token              @relation(fields: [tokenId], references: [id])
+  strategies        Strategy[]
+  deposits          Deposit[]
+  withdrawals       Withdrawal[]
+  positions         Position[]
+  rebalanceEvents   RebalanceEvent[]
+  encryptedPayloads EncryptedPayload[]
+  apySnapshots      APYSnapshot[]
+
+  @@map("vaults")
+}
+
+// ============================================================
+// 6. STRATEGY (Standalone)
+// ============================================================
+
+model Strategy {
+  id               String    @id @default(uuid())
+  vaultId          String    @map("vault_id")
+  name             String
+  strategyType     String    @map("strategy_type") // raydium_lp, drift_perps, orca_clmm, orderbook
+  riskLevel        RiskLevel @map("risk_level")
+  allocationWeight Decimal   @map("allocation_weight") // 0-100
+  isEncrypted      Boolean   @default(false) @map("is_encrypted")
+  programId        String    @map("program_id")
+  poolId           String?   @map("pool_id")
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  vault             Vault              @relation(fields: [vaultId], references: [id])
+  pool              Pool?              @relation(fields: [poolId], references: [id])
+  strategyNfts      StrategyNFT[]
+  encryptedPayloads EncryptedPayload[]
+
+  @@map("strategies")
+}
+
+// ============================================================
+// 7. ENCRYPTED PAYLOAD (Off-chain Arcium MXE)
+// ============================================================
+
+model EncryptedPayload {
+  id              String        @id @default(uuid())
+  strategyId      String?       @map("strategy_id")
+  vaultId         String        @map("vault_id")
+  payloadType     PayloadType   @map("payload_type")
+  encryptedData   Bytes         @map("encrypted_data")
+  encryptionPubkey String       @map("encryption_pubkey") // 32-byte hex
+  nonce           BigInt                                   // u128
+  commitmentHash  String        @map("commitment_hash")   // 32-byte hex
+  status          PayloadStatus @default(pending)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  expiresAt       DateTime?     @map("expires_at")
+
+  // Relations
+  strategy        Strategy?        @relation(fields: [strategyId], references: [id])
+  vault           Vault            @relation(fields: [vaultId], references: [id])
+  rebalanceEvents RebalanceEvent[]
+
+  @@map("encrypted_payloads")
+}
+
+// ============================================================
+// 8. ORDERBOOK
+// ============================================================
+
+model Orderbook {
+  id                    String          @id @default(uuid())
+  orderbookAddress      String          @unique @map("orderbook_address")
+  admin                 String
+  tokenId               String          @map("token_id")
+  quoteTokenId          String          @map("quote_token_id")
+  arciumArtifactId      String          @map("arcium_artifact_id")      // 32-byte hex
+  arciumVerificationKey String          @map("arcium_verification_key") // 32-byte hex
+  arciumMxePublicKey    String          @map("arcium_mxe_public_key")   // 32-byte hex
+  escrowAuthorityBump   Int             @map("escrow_authority_bump")
+  orderCount            BigInt          @default(0) @map("order_count")
+  status                OrderbookStatus @default(active)
+  createdAt             DateTime        @default(now()) @map("created_at")
+
+  // Relations
+  token      Token       @relation("OrderbookBaseToken", fields: [tokenId], references: [id])
+  quoteToken Token       @relation("OrderbookQuoteToken", fields: [quoteTokenId], references: [id])
+  orders     Order[]
+  settlements Settlement[]
+
+  @@map("orderbooks")
+}
+
+// ============================================================
+// 9. ORDER (Encrypted)
+// ============================================================
+
+model Order {
+  id              String      @id @default(uuid())
+  orderbookId     String      @map("orderbook_id")
+  owner           String                              // wallet pubkey
+  orderId         BigInt      @map("order_id")        // on-chain index
+  encryptionPubkey String     @map("encryption_pubkey") // 32-byte hex
+  nonce           BigInt                               // u128
+  escrowAmount    BigInt      @map("escrow_amount")    // lamports
+  status          OrderStatus @default(pending)
+  orderEncrypted  String      @map("order_encrypted")  // 32-byte hex
+  priceEncrypted  String      @map("price_encrypted")  // 32-byte hex
+  sizeEncrypted   String      @map("size_encrypted")   // 32-byte hex
+  isBuyEncrypted  String      @map("is_buy_encrypted") // 32-byte hex
+  txSignature     String?     @map("tx_signature")
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  orderbook       Orderbook    @relation(fields: [orderbookId], references: [id])
+  settlementsAsA  Settlement[] @relation("SettlementOrderA")
+  settlementsAsB  Settlement[] @relation("SettlementOrderB")
+
+  @@index([orderbookId, status])
+  @@map("orders")
+}
+
+// ============================================================
+// 10. SETTLEMENT
+// ============================================================
+
+model Settlement {
+  id              String   @id @default(uuid())
+  orderbookId     String   @map("orderbook_id")
+  orderAId        String   @map("order_a_id")
+  orderBId        String   @map("order_b_id")
+  settlementHash  String   @unique @map("settlement_hash") // replay prevention
+  executionPrice  BigInt?  @map("execution_price")
+  executionSize   BigInt?  @map("execution_size")
+  arciumSignature String   @map("arcium_signature") // 64-byte hex
+  relayer         String                             // relayer wallet pubkey
+  txSignature     String?  @map("tx_signature")
+  settledAt       DateTime @map("settled_at")
+
+  // Relations
+  orderbook Orderbook @relation(fields: [orderbookId], references: [id])
+  orderA    Order     @relation("SettlementOrderA", fields: [orderAId], references: [id])
+  orderB    Order     @relation("SettlementOrderB", fields: [orderBId], references: [id])
+
+  @@map("settlements")
+}
+
+// ============================================================
+// 11. DEPOSIT
+// ============================================================
+
+model Deposit {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  vaultId        String   @map("vault_id")
+  tokenId        String   @map("token_id")
+  amount         Decimal
+  sharesReceived Decimal  @map("shares_received")
+  txSignature    String   @map("tx_signature")
+  status         TxStatus @default(pending)
+  depositedAt    DateTime @default(now()) @map("deposited_at")
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id])
+  vault Vault @relation(fields: [vaultId], references: [id])
+  token Token @relation(fields: [tokenId], references: [id])
+
+  @@index([userId, status])
+  @@map("deposits")
+}
+
+// ============================================================
+// 12. WITHDRAWAL
+// ============================================================
+
+model Withdrawal {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  vaultId      String   @map("vault_id")
+  tokenId      String   @map("token_id")
+  amount       Decimal
+  sharesBurned Decimal  @map("shares_burned")
+  txSignature  String   @map("tx_signature")
+  status       TxStatus @default(pending)
+  withdrawnAt  DateTime @default(now()) @map("withdrawn_at")
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id])
+  vault Vault @relation(fields: [vaultId], references: [id])
+  token Token @relation(fields: [tokenId], references: [id])
+
+  @@index([userId, status])
+  @@map("withdrawals")
+}
+
+// ============================================================
+// 13. POSITION
+// ============================================================
+
+model Position {
+  id              String         @id @default(uuid())
+  userId          String         @map("user_id")
+  vaultId         String         @map("vault_id")
+  shares          Decimal        @default(0)
+  depositValue    Decimal        @default(0) @map("deposit_value")
+  currentValue    Decimal        @default(0) @map("current_value")
+  unrealizedPnl   Decimal        @default(0) @map("unrealized_pnl")
+  avgEntryPrice   Decimal        @default(0) @map("avg_entry_price")
+  status          PositionStatus @default(active)
+  lastRebalancedAt DateTime?     @map("last_rebalanced_at")
+  openedAt        DateTime       @default(now()) @map("opened_at")
+  closedAt        DateTime?      @map("closed_at")
+  updatedAt       DateTime       @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id])
+  vault Vault @relation(fields: [vaultId], references: [id])
+
+  @@unique([userId, vaultId])
+  @@map("positions")
+}
+
+// ============================================================
+// 14. REBALANCE EVENT
+// ============================================================
+
+model RebalanceEvent {
+  id                 String  @id @default(uuid())
+  vaultId            String  @map("vault_id")
+  strategyChanges    Json    @map("strategy_changes") // { before: {...}, after: {...} }
+  txSignature        String  @map("tx_signature")
+  isStealth          Boolean @default(false) @map("is_stealth")
+  encryptedPayloadId String? @map("encrypted_payload_id")
+  gasUsed            BigInt? @map("gas_used")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  // Relations
+  vault            Vault             @relation(fields: [vaultId], references: [id])
+  encryptedPayload EncryptedPayload? @relation(fields: [encryptedPayloadId], references: [id])
+
+  @@map("rebalance_events")
+}
+
+// ============================================================
+// 15. STRATEGY NFT
+// ============================================================
+
+model StrategyNFT {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  strategyId      String   @map("strategy_id")
+  cnftMintAddress String   @unique @map("cnft_mint_address")
+  metadataUri     String   @map("metadata_uri")
+  txSignature     String   @map("tx_signature")
+  mintedAt        DateTime @default(now()) @map("minted_at")
+
+  // Relations
+  user     User     @relation(fields: [userId], references: [id])
+  strategy Strategy @relation(fields: [strategyId], references: [id])
+
+  @@map("strategy_nfts")
+}
+
+// ============================================================
+// 16. APY SNAPSHOT
+// ============================================================
+
+model APYSnapshot {
+  id         String   @id @default(uuid())
+  vaultId    String?  @map("vault_id")
+  poolId     String?  @map("pool_id")
+  apyValue   Decimal  @map("apy_value")
+  source     String
+  recordedAt DateTime @default(now()) @map("recorded_at")
+
+  // Relations
+  vault Vault? @relation(fields: [vaultId], references: [id])
+  pool  Pool?  @relation(fields: [poolId], references: [id])
+
+  @@index([vaultId, recordedAt])
+  @@map("apy_snapshots")
+}
+
+// ============================================================
+// 17. CRON JOB
+// ============================================================
+
+model CronJob {
+  id               String        @id @default(uuid())
+  jobType          CronJobType   @map("job_type")
+  targetEntityType String?       @map("target_entity_type")
+  targetEntityId   String?       @map("target_entity_id")
+  frequency        String                                    // cron expression
+  status           CronJobStatus @default(active)
+  lastRunAt        DateTime?     @map("last_run_at")
+  nextRunAt        DateTime?     @map("next_run_at")
+  lastError        String?       @map("last_error")
+  runCount         Int           @default(0) @map("run_count")
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  @@index([jobType, status])
+  @@map("cron_jobs")
+}
+
+// ============================================================
+// 18. INTEGRATION LOG
+// ============================================================
+
+model IntegrationLog {
+  id                String    @id @default(uuid())
+  stepName          String    @map("step_name")
+  status            LogStatus
+  errorMessage      String?   @map("error_message")
+  latencyMs         Int       @map("latency_ms")
+  relatedEntityType String?   @map("related_entity_type")
+  relatedEntityId   String?   @map("related_entity_id")
+  metadata          Json?
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  @@index([stepName, status, createdAt])
+  @@map("integration_logs")
+}
