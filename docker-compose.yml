@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: yieldveil-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yieldveil
+      POSTGRES_PASSWORD: yieldveil_dev
+      POSTGRES_DB: yieldveil
+    ports:
+      - "5432:5432"
+    volumes:
+      - yieldveil_pgdata:/var/lib/postgresql/data
+
+volumes:
+  yieldveil_pgdata:
