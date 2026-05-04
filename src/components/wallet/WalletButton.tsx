@@ -1,68 +1,43 @@
 "use client";
 
-import { useState, useCallback } from "react";
-
-interface WalletState {
-  connected: boolean;
-  address: string | null;
-  connecting: boolean;
-}
+import React, { useCallback, useMemo } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 
 export function WalletButton() {
-  const [wallet, setWallet] = useState<WalletState>({
-    connected: false,
-    address: null,
-    connecting: false,
-  });
+  const { publicKey, wallet, disconnect, connecting, connected } = useWallet();
+  const { setVisible } = useWalletModal();
 
-  const connectWallet = useCallback(async () => {
-    setWallet((prev) => ({ ...prev, connecting: true }));
-
-    try {
-      const provider = (window as any)?.solana;
-
-      if (provider?.isPhantom) {
-        const response = await provider.connect();
-        const address = response.publicKey.toString();
-        setWallet({
-          connected: true,
-          address,
-          connecting: false,
-        });
-      } else {
-        window.open("https://phantom.app/", "_blank");
-        setWallet((prev) => ({ ...prev, connecting: false }));
-      }
-    } catch (error) {
-      console.error("Wallet connection failed:", error);
-      setWallet((prev) => ({ ...prev, connecting: false }));
+  
+  const handleClick = useCallback(() => {
+    if (!wallet) {
+      
+      setVisible(true);
+    } else if (!connected) {
+      
     }
-  }, []);
+  }, [wallet, connected, setVisible]);
 
-  const disconnectWallet = useCallback(() => {
-    const provider = (window as any)?.solana;
-    if (provider?.isPhantom) {
-      provider.disconnect();
-    }
-    setWallet({ connected: false, address: null, connecting: false });
-  }, []);
+  
+  const base58 = useMemo(() => publicKey?.toBase58(), [publicKey]);
+  const truncatedAddress = useMemo(() => {
+    if (!base58) return null;
+    return `${base58.slice(0, 4)}...${base58.slice(-4)}`;
+  }, [base58]);
 
-  const truncateAddress = (addr: string) =>
-    `${addr.slice(0, 4)}...${addr.slice(-4)}`;
-
-  if (wallet.connected && wallet.address) {
+  
+  if (connected && base58) {
     return (
       <div className="flex items-center gap-2 animate-fade-in">
         <div className="hidden sm:flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
           <div className="h-2 w-2 rounded-full bg-accent animate-pulse-glow" />
           <span className="text-xs font-mono text-surface-300">
-            {truncateAddress(wallet.address)}
+            {truncatedAddress}
           </span>
         </div>
         <button
-          onClick={disconnectWallet}
+          onClick={() => disconnect()}
           className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium text-surface-400 transition-all hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30"
-          id="disconnect-wallet-btn"
         >
           Disconnect
         </button>
@@ -70,14 +45,14 @@ export function WalletButton() {
     );
   }
 
+  
   return (
     <button
-      onClick={connectWallet}
-      disabled={wallet.connecting}
-      className="btn-wallet"
-      id="connect-wallet-btn"
+      onClick={handleClick}
+      disabled={connecting}
+      className="btn-wallet flex items-center gap-2"
     >
-      {wallet.connecting ? (
+      {connecting ? (
         <>
           <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
