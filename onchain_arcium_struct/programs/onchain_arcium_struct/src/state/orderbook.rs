@@ -1,8 +1,11 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
-
+use arcium_anchor::HasSize;
 use crate::constants::*;
 use crate::errors::ErrorCode;
+
+use borsh::{BorshDeserialize, BorshSerialize};
+
 
 
 
@@ -95,25 +98,23 @@ pub enum LogStatus {
     Timeout,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum OrderStatus {
     Pending,
-    Queued,      // Submitted to Arcium for processing
-    Processing,  // Currently being processed by MPC
+    Processing,
     Filled,
     Cancelled,
 }
+
 
 // ---------------------------------------
 // HELPER STRUCTURES
 // ---------------------------------------
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct MatchOrdersOutput {
-    pub matched: bool,
-    pub execution_price: u64,
-    pub execution_size: u64,
-}
+
+
+
+
 
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct OrderEncryptedData {
@@ -149,17 +150,22 @@ pub struct SettlementBundle {
 
 #[account]
 pub struct Orderbook {
-    pub admin: Pubkey,                     // 32
-    pub arcium_artifact_id: [u8; 32],      // 32
-    pub arcium_verification_key: [u8; 32], // 32
-    pub arcium_mxe_public_key: [u8; 32],   // 32
-    pub escrow_authority_bump: u8,         // 1
-    pub order_count: u64,                  // 8
-    pub token_mint: Pubkey,                // 32
+    pub admin: Pubkey,
+    pub order_count: u64,
+    pub token_mint: Pubkey,
+    pub escrow_authority_bump: u8,
+    pub arcium_circuit_id: [u8; 32],
+    pub arcium_verification_key: [u8; 32],
 }
 
 impl Orderbook {
-    pub const SPACE: usize = 8 + 32 + 32 + 32 + 32 + 1 + 8 + 32;
+    pub const SPACE: usize = 8 + // discriminator
+        32 + // admin
+        8 + // order_count
+        32 + // token_mint
+        1 + // escrow_authority_bump
+        32 + // arcium_circuit_id
+        32; // arcium_verification_key
 }
 
 impl OrderCommitment {
@@ -187,7 +193,7 @@ pub struct Order {
     pub encryption_pubkey: [u8; 32], // 32
     pub nonce: u128,                 // 16
     pub escrow_amount: u64,          // 8
-    pub status: OrderStatus,         // 1 + enum payload
+    pub status: OrderStatus,         // 1
     pub order_encrypted: [u8; 32],   // 32
     pub price_encrypted: [u8; 32],   // 32
     pub size_encrypted: [u8; 32],    // 32
@@ -195,7 +201,17 @@ pub struct Order {
 }
 
 impl Order {
-    pub const SPACE: usize = 8 + 32 + 8 + 32 + 16 + 8 + 1 + 32 + 32 + 32 + 32;
+    pub const SPACE: usize = 8 + // discriminator
+        32 + // owner
+        8 + // order_id
+        32 + // encryption_pubkey
+        16 + // nonce
+        8 + // escrow_amount
+        1 + // status
+        32 + // order_encrypted
+        32 + // price_encrypted
+        32 + // size_encrypted
+        32; // is_buy_encrypted
 }
 
 #[account]
@@ -223,71 +239,60 @@ pub struct InitOrderbook<'info> {
         bump,
     )]
     pub orderbook: Account<'info, Orderbook>,
+
     #[account(mut)]
     pub authority: Signer<'info>,
+
     pub token_mint: Account<'info, Mint>,
+
     #[account(
         init,
         payer = authority,
         token::mint = token_mint,
+        // The authority is the Orderbook PDA
         token::authority = orderbook,
-        seeds = [ESCROW_SEED],
+        seeds = [ESCROW_SEED, orderbook.key().as_ref()],
         bump
     )]
     pub escrow_token: Account<'info, TokenAccount>,
+
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
 }
-
 #[derive(Accounts)]
 pub struct PlaceOrder<'info> {
     #[account(mut)]
     pub orderbook: Account<'info, Orderbook>,
+
     #[account(mut)]
     pub user: Signer<'info>,
+
     #[account(
         init,
         payer = user,
         space = Order::SPACE,
-        seeds = [ORDER_SEED, orderbook.key().as_ref(), &orderbook.order_count.to_le_bytes()],
+        seeds = [
+            ORDER_SEED,
+            orderbook.key().as_ref(),
+            &orderbook.order_count.to_le_bytes()
+        ],
         bump
     )]
     pub order: Account<'info, Order>,
+
     #[account(mut)]
     pub user_token: Account<'info, TokenAccount>,
+
     #[account(mut)]
     pub escrow_token: Account<'info, TokenAccount>,
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
-#[derive(Accounts)]
-pub struct MatchOrderPair<'info> {
-    #[account(mut)]
-    pub orderbook: Account<'info, Orderbook>,
-    #[account(mut)]
-    pub order1: Account<'info, Order>,
-    #[account(mut)]
-    pub order2: Account<'info, Order>,
-    pub user: Signer<'info>,
-}
 
-#[derive(Accounts)]
-pub struct MatchCallback<'info> {
-    #[account(mut)]
-    pub orderbook: Account<'info, Orderbook>,
-    #[account(mut)]
-    pub order1: Account<'info, Order>,
-    #[account(mut)]
-    pub order2: Account<'info, Order>,
-    #[account(mut)]
-    pub order1_escrow: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub order2_escrow: Account<'info, TokenAccount>,
-    pub user: Signer<'info>,
-    pub token_program: Program<'info, Token>,
-}
+
 
 #[derive(Accounts)]
 pub struct CancelOrder<'info> {

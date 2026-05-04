@@ -36,6 +36,12 @@ pub enum ErrorCode {
     MathOverflow,
     #[msg("Insufficient balance")]
     InsufficientBalance,
-
-
+    #[msg("Cluster not set")]
+    ClusterNotSet,
+    #[msg("Vault has no deposits")]
+    EmptyVault,
+    #[msg("MPC Computation was aborted or failed")]
+    AbortedComputation,
+    #[msg("Invalid escrow account")]
+    InvalidEscrow,
 }

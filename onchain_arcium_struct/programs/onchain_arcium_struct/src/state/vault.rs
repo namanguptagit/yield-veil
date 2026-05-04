@@ -1,133 +1,77 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Token, TokenAccount};
-use crate::constants::*;
-use crate::state::orderbook::{RiskLevel, RebalanceFrequency};
-// ---------------------------------------
-// ACCOUNT SCHEMAS
-// ---------------------------------------
 
 #[account]
 pub struct Vault {
-    pub authority: Pubkey,                // 32
-    pub total_deposited: u64,             // 8
-    pub active_strategy: Pubkey,          // 32
-    pub encrypted_routing_hash: [u8; 32], // 32
-    pub bump: u8,                         // 1
+    pub bump: u8,
+    pub authority: Pubkey,
+    pub total_deposited: u64,
+    pub active_strategy: Pubkey,
+    pub encrypted_routing_hash: [u8; 32],
+    pub last_rebalance_ts: i64,
 }
 
 impl Vault {
-    pub const SPACE: usize = 8 + 32 + 8 + 32 + 32 + 1;
+    pub const SPACE: usize = 8 + // discriminator
+        1 + // bump
+        32 + // authority
+        8 + // total_deposited
+        32 + // active_strategy
+        32 + // encrypted_routing_hash
+        8; // last_rebalance_ts
 }
 
-#[account]
-pub struct UserPosition {
-    pub owner: Pubkey,         // 32
-    pub vault: Pubkey,         // 32
-    pub deposited_amount: u64, // 8
-    pub shares: u64,           // 8
-    pub bump: u8,              // 1
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum RiskLevel {
+    Low,
+    Medium,
+    High,
 }
 
-impl UserPosition {
-    pub const SPACE: usize = 8 + 32 + 32 + 8 + 8 + 1;
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum RebalanceFrequency {
+    Daily,
+    Weekly,
+    Monthly,
 }
 
 #[account]
 pub struct Strategy {
-    pub creator: Pubkey,               // 32
-    pub apy_target: u16,               // 2
-    pub risk_level: RiskLevel,         // 1
-    pub frequency: RebalanceFrequency, // 1
-    pub last_rebalance_ts: i64,        // 8
-    pub mev_time_delay: i64,           // 8
-    pub strategy_nft_mint: Pubkey,     // 32
-    pub is_active: bool,               // 1
-    pub bump: u8,                      // 1
+    pub bump: u8,
+    pub creator: Pubkey,
+    pub apy_target: u16,
+    pub risk_level: RiskLevel,
+    pub frequency: RebalanceFrequency,
+    pub last_rebalance_ts: i64,
+    pub mev_time_delay: u64,
+    pub strategy_nft_mint: Pubkey,
+    pub is_active: bool,
 }
 
 impl Strategy {
-    pub const SPACE: usize = 8 + 32 + 2 + 1 + 1 + 8 + 8 + 32 + 1 + 1;
+    pub const SPACE: usize = 8 + // discriminator
+        1 + // bump
+        32 + // creator
+        2 + // apy_target
+        1 + // risk_level
+        1 + // frequency
+        8 + // last_rebalance_ts
+        8 + // mev_time_delay
+        32 + // strategy_nft_mint
+        1; // is_active
 }
 
-// ---------------------------------------
-// INSTRUCTION CONTEXTS (VAULT/STRATEGY)
-// ---------------------------------------
-
-#[derive(Accounts)]
-pub struct InitializeVault<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = Vault::SPACE,
-        seeds = [VAULT_SEED],
-        bump
-    )]
-    pub vault: Account<'info, Vault>,
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    pub system_program: Program<'info, System>,
+#[account]
+pub struct UserPosition {
+    pub owner: Pubkey,
+    pub vault: Pubkey,
+    pub deposited_amount: u64,
+    pub shares: u64,
 }
 
-#[derive(Accounts)]
-pub struct CreateStrategy<'info> {
-    #[account(
-        init,
-        payer = creator,
-        space = Strategy::SPACE,
-        seeds = [STRATEGY_SEED, creator.key().as_ref()],
-        bump
-    )]
-    pub strategy: Account<'info, Strategy>,
-    #[account(mut)]
-    pub creator: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct Deposit<'info> {
-    #[account(mut)]
-    pub owner: Signer<'info>,
-
-    #[account(mut)]
-    pub vault: Account<'info, Vault>,
-
-    #[account(
-        mut,
-        seeds = [USER_POSITION_SEED, owner.key().as_ref(), vault.key().as_ref()],
-        bump
-    )]
-    pub user_position: Account<'info, UserPosition>,
-
-    #[account(mut)]
-    pub user_token: Account<'info, TokenAccount>,
-
-    #[account(mut)]
-    pub vault_escrow: Account<'info, TokenAccount>,
-
-    pub token_program: Program<'info, Token>,
-}
-
-
-#[derive(Accounts)]
-pub struct Withdraw<'info> {
-    #[account(mut)]
-    pub owner: Signer<'info>,
-
-    #[account(mut)]
-    pub vault: Account<'info, Vault>,
-
-    #[account(
-        mut,
-        seeds = [USER_POSITION_SEED, owner.key().as_ref(), vault.key().as_ref()],
-        bump
-    )]
-    pub user_position: Account<'info, UserPosition>,
-
-    #[account(mut)]
-    pub user_token: Account<'info, TokenAccount>,
-
-    #[account(mut)]
-    pub vault_escrow: Account<'info, TokenAccount>,
-
-    pub token_program: Program<'info, Token>,
+impl UserPosition {
+    pub const SPACE: usize = 8 + // discriminator
+        32 + // owner
+        32 + // vault
+        8 + // deposited_amount
+        8; // shares
 }
