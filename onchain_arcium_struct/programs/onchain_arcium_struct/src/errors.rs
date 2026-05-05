@@ -44,4 +44,15 @@ pub enum ErrorCode {
     AbortedComputation,
     #[msg("Invalid escrow account")]
     InvalidEscrow,
+    #[msg("Only the order owner may perform this action")]
+    UnauthorizedOrderAccess,
+
+
+    #[msg("Settlement bundle timestamp is outside the ±120s window")]
+    SettlementExpired,
+    #[msg("Order state is not valid for settlement (expected Pending or Processing)")]
+    InvalidOrderStateForSettlement,
+
+
+
 }
