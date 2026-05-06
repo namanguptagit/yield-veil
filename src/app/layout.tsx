@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Navbar } from "@/components/layout/Navbar";
 import "@solana/wallet-adapter-react-ui/styles.css";
-import { SolanaProvider } from "@/components/counter/provider/Solana";
+import { SolanaProvider } from "@/components/provider/Solana";
 
 
 export const metadata: Metadata = {
