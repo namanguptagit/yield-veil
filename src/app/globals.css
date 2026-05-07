@@ -2,10 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
 
 :root {
-  --background: #0f1117;
+  --background: #06080f;
   --foreground: #e8eaf0;
 }
 
@@ -25,55 +25,148 @@ body {
   font-family: "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.011em;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Layered mesh gradient — fixed, subtle, doesn't move with scroll. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 0%, rgba(59, 82, 252, 0.18), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 80% 0%, rgba(0, 240, 181, 0.08), transparent 60%),
+    radial-gradient(ellipse 100% 70% at 50% 100%, rgba(59, 82, 252, 0.06), transparent 60%),
+    #06080f;
+  pointer-events: none;
+}
+
+/* Subtle grain. Adds tactile depth on dark backgrounds. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.02;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
 }
 
 @layer components {
-  .glass-card {
-    @apply relative overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl shadow-glass;
+  /* Base card — flat, defined edge, no faux glass blur (cleaner on mesh bg). */
+  .card {
+    @apply relative overflow-hidden rounded-2xl border border-white/[0.07] bg-surface-900/40 backdrop-blur-md transition-all duration-300;
   }
 
-  .glass-card::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.04) 0%,
-      transparent 50%
-    );
-    pointer-events: none;
+  .card-interactive {
+    @apply card hover:-translate-y-1 hover:border-white/[0.14] hover:bg-surface-900/60 hover:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)];
+  }
+
+  /* Premium card variant with a soft inner highlight. */
+  .card-premium {
+    @apply card-interactive;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.025) 0%, transparent 50%),
+      rgba(20, 24, 38, 0.5);
+  }
+
+  /* Gradient ring used for hero card emphasis. */
+  .ring-gradient {
+    background:
+      linear-gradient(rgba(20, 24, 38, 0.85), rgba(20, 24, 38, 0.85)) padding-box,
+      linear-gradient(135deg, rgba(59, 82, 252, 0.5), rgba(0, 240, 181, 0.4)) border-box;
+    border: 1px solid transparent;
   }
 
   .gradient-text {
-    @apply bg-gradient-to-r from-accent-400 to-brand-400 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-accent-400 via-accent-300 to-brand-300 bg-clip-text text-transparent;
+  }
+
+  .gradient-text-warm {
+    @apply bg-gradient-to-br from-white via-white to-surface-300 bg-clip-text text-transparent;
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-surface-950 transition-all duration-200 hover:bg-accent-400 hover:shadow-glow active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-surface-950 transition-all duration-200 hover:bg-accent-400 hover:shadow-glow active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/[0.12] bg-white/[0.05] px-6 py-3 text-sm font-medium text-foreground transition-all duration-200 hover:bg-white/[0.1] hover:border-white/[0.2] active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.04] px-6 py-3 text-sm font-medium text-foreground transition-all duration-200 hover:bg-white/[0.08] hover:border-white/[0.18] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-surface-300 transition-all duration-150 hover:bg-white/[0.04] hover:text-white;
   }
 
   .btn-wallet {
     @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 px-5 py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:from-brand-500 hover:to-brand-400 hover:shadow-glow-brand active:scale-[0.98];
   }
+
+  /* Skeleton with shimmer sweep. */
+  .skeleton {
+    @apply rounded-lg bg-white/[0.04];
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.06) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer;
+  }
+
+  /* Chip tag. */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium tracking-wide;
+  }
+  .chip-accent {
+    @apply chip border-accent/25 bg-accent/[0.08] text-accent-300;
+  }
+  .chip-brand {
+    @apply chip border-brand-400/25 bg-brand-500/[0.1] text-brand-300;
+  }
+  .chip-neutral {
+    @apply chip border-white/[0.08] bg-white/[0.03] text-surface-300;
+  }
+
+  /* Section heading "eyebrow" pattern. */
+  .eyebrow {
+    @apply inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-accent-300;
+  }
+  .eyebrow::before {
+    content: "";
+    @apply h-px w-8 bg-accent-300/50;
+  }
+
+  /* Big monospace value treatment for dashboard / vault stats. */
+  .stat-value {
+    @apply font-mono font-bold tabular-nums tracking-tight text-white;
+  }
 }
 
+/* Animation delays. */
+.animation-delay-100 { animation-delay: 100ms; }
+.animation-delay-200 { animation-delay: 200ms; }
+.animation-delay-300 { animation-delay: 300ms; }
+.animation-delay-500 { animation-delay: 500ms; }
+.animation-delay-700 { animation-delay: 700ms; }
+.animation-delay-1000 { animation-delay: 1000ms; }
+
+/* Scrollbar. */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.18);
 }

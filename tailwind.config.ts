@@ -74,10 +74,12 @@ const config: Config = {
           "linear-gradient(135deg, #0f1117 0%, #1a1c2e 40%, #111350 100%)",
       },
       animation: {
-        "fade-in": "fadeIn 0.5s ease-out",
-        "slide-up": "slideUp 0.6s ease-out",
+        "fade-in": "fadeIn 0.5s ease-out both",
+        "slide-up": "slideUp 0.6s ease-out both",
         "pulse-glow": "pulseGlow 2s ease-in-out infinite",
         float: "float 6s ease-in-out infinite",
+        shimmer: "shimmer 1.6s linear infinite",
+        "blob-drift": "blobDrift 14s ease-in-out infinite",
       },
       keyframes: {
         fadeIn: {
@@ -95,6 +97,15 @@ const config: Config = {
         float: {
           "0%, 100%": { transform: "translateY(0)" },
           "50%": { transform: "translateY(-10px)" },
+        },
+        shimmer: {
+          "0%": { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition: "200% 0" },
+        },
+        blobDrift: {
+          "0%, 100%": { transform: "translate(-50%, -50%) scale(1)" },
+          "33%": { transform: "translate(-48%, -52%) scale(1.05)" },
+          "66%": { transform: "translate(-52%, -48%) scale(0.95)" },
         },
       },
     },
