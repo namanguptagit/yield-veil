@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-onchain_arcium_struct = "AAuywNJFtz2TiY428fj8C44FMnYV22M1wR4q7MQa7hfB"
+onchain_arcium_struct = "GByKZ1AYM2g9z64n9xevQRa8hV27wd4xa1XgzdTgKjAu"
 
 [registry]
 url = "https://api.apr.dev"
