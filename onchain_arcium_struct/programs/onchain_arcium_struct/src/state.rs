@@ -20,7 +20,6 @@ pub struct Orderbook{
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy , PartialEq, Eq, Debug, InitSpace)]
 #[repr(u8)]
-#[borsh(use_discriminant = true)]
 pub enum OrderStatus {
     Pending = 0,
     Queued = 1,
@@ -54,7 +53,6 @@ pub struct Order {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
 #[repr(u8)]
-#[borsh(use_discriminant = true)]
 pub enum Protocol {
     Raydium  = 0,
     Drift    = 1,
@@ -121,12 +119,20 @@ pub struct MatchOrdersOutput {
     pub execution_size: u64,
 }
 
+impl arcium_anchor::HasSize for MatchOrdersOutput {
+    const SIZE: usize = 1 + 8 + 8;
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct RouteYieldOutput {
     pub success: bool,
     pub deposit_amount: u64,
     pub target_protocol: u8,
     pub yield_rate_bps: u64,
+}
+
+impl arcium_anchor::HasSize for RouteYieldOutput {
+    const SIZE: usize = 1 + 8 + 1 + 8;
 }
 
 
