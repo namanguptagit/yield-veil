@@ -60,6 +60,9 @@ prisma/migrations/*.sql.bak
 target/
 .anchor/
 test-ledger/
+**/*.rs.bk
+onchain_arcium_struct/build/
+onchain_arcium_struct/encrypted-ixs/arcis_temp_target/
 
 # Postgres / DB dumps (local only)
 *.sql.dump

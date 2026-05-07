@@ -1,9 +1,19 @@
-/// yield-orderbook-veil/encrypted-ixs/src/lib.rs
+#![allow(
+    clippy::implicit_saturating_sub,
+    clippy::manual_saturating_arithmetic,
+)]
+
 use arcis::*;
+
 #[encrypted]
 mod circuits {
     use arcis::*;
 
+    pub const BATCH_ORDERS_LEN: usize = 4;
+    pub const BATCH_ESCROWS_LEN: usize = 4;
+    pub const BATCH_POSITIONS_LEN: usize = 4;
+
+    #[derive(Clone, Copy)]
     pub struct EncOrder {
         pub is_buy: bool,
         pub price: u64,
@@ -12,7 +22,8 @@ mod circuits {
         pub timestamp: u64,
         pub order_nonce: u64,
     }
-   #[derive(Clone, Copy, ArcisType)]
+
+    #[derive(Clone, Copy)]
     pub struct EncEscrow {
         pub balance: u64,
         pub fee_reserve: u64,
@@ -20,7 +31,7 @@ mod circuits {
         pub last_epoch: u64,
     }
 
-
+    #[derive(Clone, Copy)]
     pub struct EncPosition {
         pub amount: u64,
         pub protocol: u8,
@@ -31,25 +42,15 @@ mod circuits {
         pub open_epoch: u64,
     }
 
-
-    // ... (same for EncPosition, EncAccruedYield, MatchResult,
-    // RouteResult, RiskCheckResult, BatchMatchSummary,
-    // OraclePrice)
-    //
-
-
-
-
-
-
+    #[derive(Clone, Copy)]
     pub struct EncAccruedYield {
         pub epoch_yield: u64,
         pub lifetime_yield: u64,
         pub last_updated_epoch: u64,
         pub owner: [u8; 32],
     }
-    /// Result of a match_orders computation.
 
+    #[derive(Clone, Copy)]
     pub struct MatchResult {
         pub matched: bool,
         pub execution_price: u64,
@@ -57,8 +58,8 @@ mod circuits {
         pub fee_bps: u64,
         pub order1_is_maker: bool,
     }
-    /// Result of a yield routing computation.
 
+    #[derive(Clone, Copy)]
     pub struct RouteResult {
         pub success: bool,
         pub deposit_amount: u64,
@@ -66,32 +67,65 @@ mod circuits {
         pub yield_rate_bps: u64,
         pub fee_amount: u64,
     }
-    /// Margin / health-factor check result.
 
+    #[derive(Clone, Copy)]
     pub struct RiskCheckResult {
         pub healthy: bool,
         pub health_factor_bps: u64,
         pub available_collateral: u64,
         pub should_liquidate: bool,
     }
-    /// Summary produced after batch matching a set of orders.
+
+    #[derive(Clone, Copy)]
     pub struct BatchMatchSummary {
         pub matched_pairs: u64,
         pub total_volume: u64,
         pub vwap: u64,
         pub total_fees: u64,
     }
-    /// Oracle price feed used as a plaintext public input to MXE instructions.
 
+    #[derive(Clone, Copy)]
     pub struct OraclePrice {
         pub mark_price: u64,
         pub confidence: u64,
         pub publish_slot: u64,
     }
 
+    #[derive(Clone, Copy)]
+    pub struct OrderBatch {
+        pub orders: [EncOrder; BATCH_ORDERS_LEN],
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct EscrowBatch {
+        pub escrows: [EncEscrow; BATCH_ESCROWS_LEN],
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct PositionBatch {
+        pub positions: [EncPosition; BATCH_POSITIONS_LEN],
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct RouteResultBatch {
+        pub results: [RouteResult; BATCH_POSITIONS_LEN],
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct RebalanceOutput {
+        pub new_position: EncPosition,
+        pub route: RouteResult,
+    }
+
+    const ZERO_ROUTE_RESULT: RouteResult = RouteResult {
+        success: false,
+        deposit_amount: 0,
+        target_protocol: 0,
+        yield_rate_bps: 0,
+        fee_amount: 0,
+    };
 
     #[instruction]
-
     pub fn match_orders(
         order1: Enc<Shared, EncOrder>,
         order2: Enc<Shared, EncOrder>,
@@ -107,36 +141,34 @@ mod circuits {
         let o2 = order2.to_arcis();
         let e1 = escrow1.to_arcis();
         let e2 = escrow2.to_arcis();
+
         let sides_cross = o1.is_buy != o2.is_buy;
-        let prices_cross = sides_cross && {
-            if o1.is_buy { o1.price >= o2.price }
-            else { o2.price >= o1.price }
-        };
+        let prices_cross = sides_cross
+            && (if o1.is_buy { o1.price >= o2.price } else { o2.price >= o1.price });
+
         let execution_price = if prices_cross {
             if o1.is_buy { o2.price } else { o1.price }
         } else {
             0u64
         };
-        let execution_size = if prices_cross {
-            o1.size.min(o2.size)
-        } else {
-            0u64
-        };
+        let execution_size = if prices_cross { o1.size.min(o2.size) } else { 0u64 };
         let fee = if prices_cross {
-            (execution_size.saturating_mul(FEE_BPS)) / 10_000
+            (execution_size * FEE_BPS) / 10_000
         } else {
             0u64
         };
-        let net_size = execution_size.saturating_sub(fee);
-        let (buyer_escrow, seller_escrow) = if o1.is_buy {
-            (&e1, &e2)
+        let net_size = execution_size - fee;
+
+        let (buyer_balance, seller_balance) = if o1.is_buy {
+            (e1.balance, e2.balance)
         } else {
-            (&e2, &e1)
+            (e2.balance, e1.balance)
         };
-        let buyer_ok = prices_cross && buyer_escrow.balance >= net_size;
-        let seller_ok = prices_cross && seller_escrow.balance >= execution_size;
+        let buyer_ok = prices_cross && buyer_balance >= net_size;
+        let seller_ok = prices_cross && seller_balance >= execution_size;
         let final_matched = prices_cross && buyer_ok && seller_ok;
         let order1_is_maker = o1.timestamp <= o2.timestamp;
+
         let result = MatchResult {
             matched: final_matched,
             execution_price,
@@ -144,16 +176,17 @@ mod circuits {
             fee_bps: FEE_BPS,
             order1_is_maker,
         };
+
         let (new_e1, new_e2) = if final_matched {
             if o1.is_buy {
                 let updated_buyer = EncEscrow {
-                    balance: e1.balance.saturating_sub(net_size),
-                    fee_reserve: e1.fee_reserve.saturating_add(fee),
+                    balance: e1.balance - net_size,
+                    fee_reserve: e1.fee_reserve + fee,
                     owner: e1.owner,
                     last_epoch: e1.last_epoch,
                 };
                 let updated_seller = EncEscrow {
-                    balance: e2.balance.saturating_sub(execution_size).saturating_add(net_size),
+                    balance: e2.balance - execution_size + net_size,
                     fee_reserve: e2.fee_reserve,
                     owner: e2.owner,
                     last_epoch: e2.last_epoch,
@@ -161,22 +194,23 @@ mod circuits {
                 (updated_buyer, updated_seller)
             } else {
                 let updated_seller = EncEscrow {
-                    balance: e1.balance.saturating_sub(execution_size).saturating_add(net_size),
+                    balance: e1.balance - execution_size + net_size,
                     fee_reserve: e1.fee_reserve,
                     owner: e1.owner,
                     last_epoch: e1.last_epoch,
                 };
                 let updated_buyer = EncEscrow {
-                    balance: e2.balance.saturating_sub(net_size),
-                    fee_reserve: e2.fee_reserve.saturating_add(fee),
+                    balance: e2.balance - net_size,
+                    fee_reserve: e2.fee_reserve + fee,
                     owner: e2.owner,
                     last_epoch: e2.last_epoch,
                 };
                 (updated_seller, updated_buyer)
             }
         } else {
-            (e1.clone(), e2.clone())
+            (e1, e2)
         };
+
         (
             order1.owner.from_arcis(result),
             escrow1.owner.from_arcis(new_e1),
@@ -202,21 +236,23 @@ mod circuits {
 
     #[instruction]
     pub fn calculate_vwap(
-        buy_orders: Enc<Shared, Vec<EncOrder>>,
-        sell_orders: Enc<Shared, Vec<EncOrder>>,
+        buy_orders: Enc<Shared, OrderBatch>,
+        sell_orders: Enc<Shared, OrderBatch>,
     ) -> Enc<Shared, u64> {
         let buys = buy_orders.to_arcis();
         let sells = sell_orders.to_arcis();
         let mut total_volume: u64 = 0;
         let mut weighted_price_sum: u64 = 0;
-        for buy in buys.iter() {
-            for sell in sells.iter() {
-                if buy.price >= sell.price {
+        for bi in 0..BATCH_ORDERS_LEN {
+            for si in 0..BATCH_ORDERS_LEN {
+                let buy = buys.orders[bi];
+                let sell = sells.orders[si];
+                let active = buy.size > 0 && sell.size > 0;
+                if active && buy.price >= sell.price {
                     let exec_price = sell.price;
                     let exec_size = buy.size.min(sell.size);
-                    weighted_price_sum = weighted_price_sum
-                        .saturating_add(exec_price.saturating_mul(exec_size));
-                    total_volume = total_volume.saturating_add(exec_size);
+                    weighted_price_sum += exec_price * exec_size;
+                    total_volume += exec_size;
                 }
             }
         }
@@ -227,8 +263,6 @@ mod circuits {
         };
         buy_orders.owner.from_arcis(vwap)
     }
-
-
 
     #[instruction]
     pub fn route_yield(
@@ -241,8 +275,8 @@ mod circuits {
         const FEE_BPS: u64 = 10;
         const MAX_PROTO: u8 = 3;
         let pos = position.to_arcis();
-        let fee_amount = pos.amount.saturating_mul(FEE_BPS) / 10_000;
-        let net_deposit = pos.amount.saturating_sub(fee_amount);
+        let fee_amount = (pos.amount * FEE_BPS) / 10_000;
+        let net_deposit = pos.amount - fee_amount;
         let apy_table: [u64; 4] = [
             raydium_apy_bps,
             drift_apy_bps,
@@ -272,7 +306,6 @@ mod circuits {
         position.owner.from_arcis(result)
     }
 
-
     #[instruction]
     pub fn rebalance_position(
         position: Enc<Shared, EncPosition>,
@@ -280,7 +313,7 @@ mod circuits {
         drift_apy_bps: u64,
         solend_apy_bps: u64,
         dark_pool_apy_bps: u64,
-    ) -> (Enc<Shared, EncPosition>, Enc<Shared, RouteResult>) {
+    ) -> Enc<Shared, RebalanceOutput> {
         const FEE_BPS: u64 = 5;
         let pos = position.to_arcis();
         let apy_table: [u64; 4] = [
@@ -304,8 +337,8 @@ mod circuits {
         } else {
             (pos.protocol, current_apy)
         };
-        let fee = pos.amount.saturating_mul(FEE_BPS) / 10_000;
-        let net_amount = pos.amount.saturating_sub(fee);
+        let fee = (pos.amount * FEE_BPS) / 10_000;
+        let net_amount = pos.amount - fee;
         let new_pos = EncPosition {
             amount: net_amount,
             protocol: new_protocol,
@@ -322,12 +355,11 @@ mod circuits {
             yield_rate_bps: new_apy,
             fee_amount: fee,
         };
-        (
-            position.owner.from_arcis(new_pos),
-            position.owner.from_arcis(route_result),
-        )
+        position.owner.from_arcis(RebalanceOutput {
+            new_position: new_pos,
+            route: route_result,
+        })
     }
-
 
     #[instruction]
     pub fn compound_yield(
@@ -340,8 +372,8 @@ mod circuits {
         let should_compound = pos.auto_compound && yield_.epoch_yield > 0;
         let (new_amount, new_lifetime) = if should_compound {
             (
-                pos.amount.saturating_add(yield_.epoch_yield),
-                yield_.lifetime_yield.saturating_add(yield_.epoch_yield),
+                pos.amount + yield_.epoch_yield,
+                yield_.lifetime_yield + yield_.epoch_yield,
             )
         } else {
             (pos.amount, yield_.lifetime_yield)
@@ -368,17 +400,16 @@ mod circuits {
     ) -> Enc<Mxe, EncAccruedYield> {
         let pos = position.to_arcis();
         let yield_ = accrued_yield.to_arcis();
-        let new_epoch_yield = pos.amount
-            .saturating_mul(epoch_yield_bps)
-            / 10_000;
+        let new_epoch_yield = (pos.amount * epoch_yield_bps) / 10_000;
         let updated = EncAccruedYield {
-            epoch_yield: yield_.epoch_yield.saturating_add(new_epoch_yield),
-            lifetime_yield: yield_.lifetime_yield.saturating_add(new_epoch_yield),
+            epoch_yield: yield_.epoch_yield + new_epoch_yield,
+            lifetime_yield: yield_.lifetime_yield + new_epoch_yield,
             last_updated_epoch: current_epoch,
             owner: yield_.owner,
         };
         accrued_yield.owner.from_arcis(updated)
     }
+
     #[instruction]
     pub fn withdraw_yield(
         position: Enc<Shared, EncPosition>,
@@ -399,6 +430,7 @@ mod circuits {
             accrued_yield.owner.from_arcis(zeroed),
         )
     }
+
     #[instruction]
     pub fn close_position(
         position: Enc<Shared, EncPosition>,
@@ -406,13 +438,9 @@ mod circuits {
     ) -> Enc<Shared, u64> {
         let pos = position.to_arcis();
         let yield_ = accrued_yield.to_arcis();
-        let total_payout = pos.amount.saturating_add(yield_.epoch_yield);
+        let total_payout = pos.amount + yield_.epoch_yield;
         position.owner.from_arcis(total_payout)
     }
-
-
-
-    // Risk Pipeline
 
     #[instruction]
     pub fn check_position_health(
@@ -422,22 +450,23 @@ mod circuits {
         leverage: u64,
     ) -> Enc<Shared, RiskCheckResult> {
         let pos = position.to_arcis();
-        let escrow = escrow.to_arcis();
-        let collateral_value = escrow.balance
-            .saturating_mul(oracle.mark_price)
-            / 1_000_000_000;
-        let required_collateral = pos.amount
-            .saturating_mul(10_000)
-            .checked_div(leverage)
-            .unwrap_or(u64::MAX);
+        let esc = escrow.to_arcis();
+        let collateral_value = (esc.balance * oracle.mark_price) / 1_000_000_000;
+        let required_collateral = if leverage > 0 {
+            (pos.amount * 10_000) / leverage
+        } else {
+            u64::MAX
+        };
         let health_factor_bps = if required_collateral > 0 {
-            (collateral_value.saturating_mul(10_000))
-                .checked_div(required_collateral)
-                .unwrap_or(0)
+            (collateral_value * 10_000) / required_collateral
         } else {
             10_000
         };
-        let available_collateral = collateral_value.saturating_sub(required_collateral);
+        let available_collateral = if collateral_value > required_collateral {
+            collateral_value - required_collateral
+        } else {
+            0
+        };
         let should_liquidate = health_factor_bps < 10_500;
         let result = RiskCheckResult {
             healthy: health_factor_bps >= 10_000,
@@ -447,6 +476,7 @@ mod circuits {
         };
         position.owner.from_arcis(result)
     }
+
     #[instruction]
     pub fn max_safe_withdrawal(
         position: Enc<Shared, EncPosition>,
@@ -456,23 +486,21 @@ mod circuits {
         buffer_bps: u64,
     ) -> Enc<Shared, u64> {
         let pos = position.to_arcis();
-        let escrow = escrow.to_arcis();
-        let collateral_value = escrow.balance
-            .saturating_mul(oracle.mark_price)
-            / 1_000_000_000;
-        let min_required = pos.amount
-            .saturating_mul(10_000 + buffer_bps)
-            .checked_div(leverage)
-            .unwrap_or(u64::MAX);
+        let esc = escrow.to_arcis();
+        let collateral_value = (esc.balance * oracle.mark_price) / 1_000_000_000;
+        let min_required = if leverage > 0 {
+            (pos.amount * (10_000 + buffer_bps)) / leverage
+        } else {
+            u64::MAX
+        };
         let max_withdraw = if collateral_value > min_required {
-            collateral_value.saturating_sub(min_required)
+            collateral_value - min_required
         } else {
             0u64
         };
         position.owner.from_arcis(max_withdraw)
     }
 
-    // Settlement
     #[instruction]
     pub fn produce_settlement(
         order1: Enc<Shared, EncOrder>,
@@ -480,7 +508,6 @@ mod circuits {
         match_result: Enc<Shared, MatchResult>,
     ) -> (Enc<Shared, u64>, Enc<Shared, u64>) {
         let o1 = order1.to_arcis();
-        let o2 = order2.to_arcis();
         let result = match_result.to_arcis();
         let (amount_1_to_2, amount_2_to_1) = if result.matched {
             if o1.is_buy {
@@ -496,6 +523,7 @@ mod circuits {
             order2.owner.from_arcis(amount_2_to_1),
         )
     }
+
     #[instruction]
     pub fn produce_yield_settlement(
         position: Enc<Shared, EncPosition>,
@@ -503,22 +531,20 @@ mod circuits {
     ) -> Enc<Shared, u64> {
         let pos = position.to_arcis();
         let yield_ = accrued_yield.to_arcis();
-        let total = pos.amount.saturating_add(yield_.epoch_yield);
+        let total = pos.amount + yield_.epoch_yield;
         position.owner.from_arcis(total)
     }
 
-
-    // Batch Operations
     #[instruction]
     pub fn batch_match_orders(
-        buy_orders: Enc<Shared, Vec<EncOrder>>,
-        sell_orders: Enc<Shared, Vec<EncOrder>>,
-        buy_escrows: Enc<Mxe, Vec<EncEscrow>>,
-        sell_escrows: Enc<Mxe, Vec<EncEscrow>>,
+        buy_orders: Enc<Shared, OrderBatch>,
+        sell_orders: Enc<Shared, OrderBatch>,
+        buy_escrows: Enc<Mxe, EscrowBatch>,
+        sell_escrows: Enc<Mxe, EscrowBatch>,
     ) -> (
         Enc<Shared, BatchMatchSummary>,
-        Enc<Mxe, Vec<EncEscrow>>,
-        Enc<Mxe, Vec<EncEscrow>>,
+        Enc<Mxe, EscrowBatch>,
+        Enc<Mxe, EscrowBatch>,
     ) {
         const FEE_BPS: u64 = 10;
         let buys = buy_orders.to_arcis();
@@ -529,60 +555,76 @@ mod circuits {
         let mut total_volume: u64 = 0;
         let mut total_fees: u64 = 0;
         let mut weighted_sum: u64 = 0;
-        for (bi, buy) in buys.iter().enumerate() {
-            for (si, sell) in sells.iter().enumerate() {
-                if be[bi].balance == 0 || se[si].balance == 0 { continue; }
-                if buy.price >= sell.price {
+
+        for bi in 0..BATCH_ORDERS_LEN {
+            for si in 0..BATCH_ORDERS_LEN {
+                let buy = buys.orders[bi];
+                let sell = sells.orders[si];
+                let active = be.escrows[bi].balance > 0
+                    && se.escrows[si].balance > 0
+                    && buy.size > 0
+                    && sell.size > 0;
+                if active && buy.price >= sell.price {
                     let exec_price = sell.price;
-                    let exec_size = buy.size.min(sell.size)
-                        .min(be[bi].balance)
-                        .min(se[si].balance);
-                    let fee = exec_size.saturating_mul(FEE_BPS) / 10_000;
-                    let net = exec_size.saturating_sub(fee);
-                    be[bi].balance = be[bi].balance.saturating_sub(net);
-                    be[bi].fee_reserve = be[bi].fee_reserve.saturating_add(fee);
-                    se[si].balance = se[si].balance.saturating_sub(exec_size).saturating_add(net);
-                    matched_pairs = matched_pairs.saturating_add(1);
-                    total_volume = total_volume.saturating_add(net);
-                    total_fees = total_fees.saturating_add(fee);
-                    weighted_sum = weighted_sum.saturating_add(
-                        exec_price.saturating_mul(net)
-                    );
+                    let exec_size = buy
+                        .size
+                        .min(sell.size)
+                        .min(be.escrows[bi].balance)
+                        .min(se.escrows[si].balance);
+                    let fee = (exec_size * FEE_BPS) / 10_000;
+                    let net = exec_size - fee;
+                    be.escrows[bi].balance -= net;
+                    be.escrows[bi].fee_reserve += fee;
+                    se.escrows[si].balance = se.escrows[si].balance - exec_size + net;
+                    matched_pairs += 1;
+                    total_volume += net;
+                    total_fees += fee;
+                    weighted_sum += exec_price * net;
                 }
             }
         }
-        let vwap = if total_volume > 0 { weighted_sum / total_volume } else { 0 };
+
+        let vwap = if total_volume > 0 {
+            weighted_sum / total_volume
+        } else {
+            0
+        };
         let summary = BatchMatchSummary {
             matched_pairs,
             total_volume,
             vwap,
             total_fees,
         };
+
         (
             buy_orders.owner.from_arcis(summary),
             buy_escrows.owner.from_arcis(be),
             sell_escrows.owner.from_arcis(se),
         )
     }
+
     #[instruction]
     pub fn batch_route_yield(
-        positions: Enc<Shared, Vec<EncPosition>>,
+        positions: Enc<Shared, PositionBatch>,
         raydium_apy_bps: u64,
         drift_apy_bps: u64,
         solend_apy_bps: u64,
         dark_pool_apy_bps: u64,
-    ) -> Enc<Shared, Vec<RouteResult>> {
+    ) -> Enc<Shared, RouteResultBatch> {
         const FEE_BPS: u64 = 10;
-        let positions_vec = positions.to_arcis();
+        let pos_batch = positions.to_arcis();
         let apy_table: [u64; 4] = [
             raydium_apy_bps,
             drift_apy_bps,
             solend_apy_bps,
             dark_pool_apy_bps,
         ];
-        let results: Vec<RouteResult> = positions_vec.iter().map(|pos| {
-            let fee_amount = pos.amount.saturating_mul(FEE_BPS) / 10_000;
-            let net_deposit = pos.amount.saturating_sub(fee_amount);
+        let mut results = [ZERO_ROUTE_RESULT; BATCH_POSITIONS_LEN];
+
+        for (i, slot) in results.iter_mut().enumerate() {
+            let pos = pos_batch.positions[i];
+            let fee_amount = (pos.amount * FEE_BPS) / 10_000;
+            let net_deposit = pos.amount - fee_amount;
             let preferred = pos.protocol.min(3) as usize;
             let mut best_protocol = preferred as u8;
             let mut best_apy = if apy_table[preferred] >= pos.min_apy_bps {
@@ -590,35 +632,22 @@ mod circuits {
             } else {
                 0u64
             };
-            for (i, &apy) in apy_table.iter().enumerate() {
+            for (j, &apy) in apy_table.iter().enumerate() {
                 if apy > best_apy && apy >= pos.min_apy_bps {
                     best_apy = apy;
-                    best_protocol = i as u8;
+                    best_protocol = j as u8;
                 }
             }
             let success = best_apy >= pos.min_apy_bps && net_deposit > 0;
-            RouteResult {
+            *slot = RouteResult {
                 success,
                 deposit_amount: if success { net_deposit } else { 0 },
                 target_protocol: if success { best_protocol } else { pos.protocol },
                 yield_rate_bps: best_apy,
-                fee_amount, // <-- Here is the completed section you got cut off on!
-            }
-        }).collect();
-        // Re-encrypt the results array back to the caller
-        positions.owner.from_arcis(results)
+                fee_amount,
+            };
+        }
+
+        positions.owner.from_arcis(RouteResultBatch { results })
     }
-
-
-
-
-    // Apply the same renames (.to_arcis / .from_arcis) to:
-    // validate_order, calculate_vwap, route_yield,
-    // rebalance_position,
-    // compound_yield, accrue_epoch_yield, withdraw_yield,
-    // close_position,
-    // check_position_health, max_safe_withdrawal, produce_settlement,
-    // produce_yield_settlement, batch_match_orders,
-    //batch_route_yield,
-    // batch_compound_yield
 }

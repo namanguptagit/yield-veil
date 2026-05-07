@@ -91,7 +91,7 @@ mod circuits {
         // condition only selects which value flows out.
         let new_e1 = EncEscrow {
             balance: if final_matched {
-                e1.balance.saturating_sub(execution_size)
+                e1.balance - execution_size
             } else {
                 e1.balance
             },
@@ -99,7 +99,7 @@ mod circuits {
         };
         let new_e2 = EncEscrow {
             balance: if final_matched {
-                e2.balance.saturating_sub(execution_size)
+                e2.balance - execution_size
             } else {
                 e2.balance
             },
@@ -139,8 +139,8 @@ mod circuits {
         let pos = position.to_arcis();
         // 0.1% fee deducted before deposit.
         let fee_bps = 10u64;
-        let fee = pos.amount.saturating_mul(fee_bps) / 10_000;
-        let net = pos.amount.saturating_sub(fee);
+        let fee = (pos.amount * fee_bps) / 10_000;
+        let net = pos.amount - fee;
         let candidates = [
             Candidate { protocol: 0, apy: raydium_apy_bps },
             Candidate { protocol: 1, apy: drift_apy_bps },
@@ -171,7 +171,7 @@ mod circuits {
     ) -> (Enc<Shared, PrivatePosition>, Enc<Mxe, u64>) {
         let mut pos = position.to_arcis();
         let yield_amount = accrued_yield.to_arcis();
-        pos.amount = pos.amount.saturating_add(yield_amount);
+        pos.amount = pos.amount + yield_amount;
         let zero = 0u64;
         (
             position.owner.from_arcis(pos),
