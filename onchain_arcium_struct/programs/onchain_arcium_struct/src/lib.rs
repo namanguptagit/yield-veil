@@ -14,7 +14,7 @@ use mxe_instruction::*;
 use errors::ErrorCode;
 use state::*;
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("GByKZ1AYM2g9z64n9xevQRa8hV27wd4xa1XgzdTgKjAu");
 
 
 const COMP_DEF_OFFSET_MATCH:    u32 = comp_def_offset("match_orders");
